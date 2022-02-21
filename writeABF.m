@@ -87,6 +87,16 @@ for ch = 1:maxNumCh
 end
 
 
+%% Determine the peak data deviation from zero
+maxVal = zeros(1,channelCount);
+for ch = 1:channelCount
+  maxVal(ch) = max(abs(channelData(ch,:)));
+  if maxVal(ch) == 0
+    maxVal(ch) = 1e-9;
+  end
+end
+
+
 %% ADC adjustments
 
 % These ADC adjustments are used for integer conversion. It's a good idea
@@ -94,15 +104,14 @@ end
 % to avoid divide-by-zero errors when loading ABFs.
 
 fSignalGain = 1; % always 1
-fADCProgrammableGain = 1; % always 1
-lADCResolution = 2^15; % 16-bit signed = +/- 32768
-
-
-%% Determine the peak data deviation from zero
-maxVal = zeros(1,channelCount);
-for ch = 1:channelCount
-  maxVal(ch) = max(abs(channelData(ch,:)));
+for ch = 1:maxNumCh
+  if ch <= channelCount
+    fADCProgrammableGain(ch) = (10/10^(floor(log10(maxVal(ch)))));
+  else
+    fADCProgrammableGain(ch) = 1;
+  end
 end
+lADCResolution = 2^15; % 16-bit signed = +/- 32768
 
 
 %% Set the scaling factor to be the biggest allowable to accommodate the data
@@ -112,7 +121,7 @@ for ch = 1:channelCount
   fInstrumentScaleFactor = 1;
   for i = 1:10
     fInstrumentScaleFactor = fInstrumentScaleFactor/10;
-    valueScaleI = lADCResolution / fADCRange * fInstrumentScaleFactor;
+    valueScaleI = fADCProgrammableGain(ch) * lADCResolution / fADCRange * fInstrumentScaleFactor;
     maxDeviationFromZero = 32767 / valueScaleI;
     if maxDeviationFromZero >= maxVal(ch)
       valueScale(ch) = valueScaleI;
@@ -139,7 +148,7 @@ fseek(fid,244,'bof'); fwrite(fid,fADCRange,'float');
 for ch = 1:maxNumCh
   fseek(fid, 922+(ch-1)*4,  'bof'); fwrite(fid,fInstrumentScaleFactor,'float');
   fseek(fid, 1050+(ch-1)*4, 'bof'); fwrite(fid,fSignalGain,'float');
-  fseek(fid, 730+(ch-1)*4,  'bof'); fwrite(fid,fADCProgrammableGain,'float');
+  fseek(fid, 730+(ch-1)*4,  'bof'); fwrite(fid,fADCProgrammableGain(ch),'float');
   fseek(fid, 602+(ch-1)*8,  'bof'); fwrite(fid,unitString{min([ch channelCount])},'uchar');
 end
 

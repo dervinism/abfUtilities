@@ -9,6 +9,7 @@ floating-point numbers).
 
 import struct
 import numpy as np
+import math
 
 
 def writeABF(channelData, filename, sampleRateHz, units=['mV']):
@@ -64,19 +65,28 @@ def writeABF(channelData, filename, sampleRateHz, units=['mV']):
             struct.pack_into('h', data, 378 + 2*ch, -1)
             struct.pack_into('h', data, 410 + 2*ch, -1)
 
+    # determine the peak data deviation from zero
+    maxVal = list()
+    for ch in range(channelCount):
+        maxValCh = np.max(np.abs(channelData[ch,:]))
+        if maxValCh == 0:
+            maxVal.append(1e-9)
+        else:
+            maxVal.append(maxValCh)
+
     # These ADC adjustments are used for integer conversion. It's a good idea
     # to populate these with non-zero values even when using float32 notation
     # to avoid divide-by-zero errors when loading ABFs.
 
     fSignalGain = 1  # always 1
-    fADCProgrammableGain = 1  # always 1
+    fADCProgrammableGain = list()
+    for ch in range(MAX_NUM_CH):
+        if ch <= channelCount - 1:
+            fADCProgrammableGain.append(10/10**math.floor(math.log10(maxVal[ch])))
+        else:
+            fADCProgrammableGain.append(1);
     lADCResolution = 2**15  # 16-bit signed = +/- 32768
-
-    # determine the peak data deviation from zero
-    maxVal = list()
-    for ch in range(channelCount):
-        maxVal.append(np.max(np.abs(channelData[ch,:])))
-
+    
     # set the scaling factor to be the biggest allowable to accommodate the data
     fADCRange = 10
     valueScale = list()
@@ -84,7 +94,7 @@ def writeABF(channelData, filename, sampleRateHz, units=['mV']):
         fInstrumentScaleFactor = 1
         for i in range(10):
             fInstrumentScaleFactor /= 10
-            valueScaleI = lADCResolution / fADCRange * fInstrumentScaleFactor
+            valueScaleI = fADCProgrammableGain[ch] * lADCResolution / fADCRange * fInstrumentScaleFactor
             maxDeviationFromZero = 32767 / valueScaleI
             if (maxDeviationFromZero >= maxVal[ch]):
                 valueScale.append(valueScaleI)
@@ -104,7 +114,7 @@ def writeABF(channelData, filename, sampleRateHz, units=['mV']):
     for ch in range(MAX_NUM_CH):
         struct.pack_into('f', data, 922+ch*4, fInstrumentScaleFactor)
         struct.pack_into('f', data, 1050+ch*4, fSignalGain)
-        struct.pack_into('f', data, 730+ch*4, fADCProgrammableGain)
+        struct.pack_into('f', data, 730+ch*4, fADCProgrammableGain[ch])
         struct.pack_into('8s', data, 602+ch*8, unitString[min([ch, channelCount-1])].encode())
     
     # interleave signals
